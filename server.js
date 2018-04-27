@@ -2,33 +2,44 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 
-const users = require('./routes/api/users');
-const profile = require('./routes/api/profile');
-const posts = require('./routes/api/posts');
-
+const usersRouter = require('./routes/api/users');
+const profileRouter = require('./routes/api/profile');
+const postsRouter = require('./routes/api/posts');
+const passport = require('passport');
 const app = express();
 
-// Middleware
+// ---------------------
+// @Middleware
+// ---------------------
 
 // Allow / Parse req body (false = can be string or array) & allow json
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use(passport.initialize());
 
-// DB Config
+// Passport config (passport stuff pulled in from here)
+require('./config/passport')(passport);
+
+// ---------------------
+// @Database
+// ---------------------
+
 const db = require('./config/keys').prodDb;
 
-// Connect to db
+// Connect
 mongoose
   .connect(db)
   .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.log(err));
+  .catch((err) => console.log(err));
 
-app.get('/', (req, res) => res.send('Hello World'));
+// ---------------------
+// @Router
+// ---------------------
 
-// Use Routes (router) for these files / api controllers
-app.use('/api/users', users);
-app.use('/api/profile', profile);
-app.use('/api/posts', posts);
+// Load the router for each controller which contains all its routes
+app.use('/api/users', usersRouter);
+app.use('/api/profile', profileRouter);
+app.use('/api/posts', postsRouter);
 
 // use environment port, or 5000 for local (as no env var set)
 const port = process.env.PORT || 5000;

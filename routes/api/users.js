@@ -3,23 +3,34 @@ const express = require('express');
 const router = express.Router();
 const gravatar = require('gravatar');
 const bcrypt = require('bcryptjs');
-
+const jwt = require('jsonwebtoken');
 const User = require('../../models/User');
+const keys = require('../../config/keys');
+
+const passport = require('passport');
+
+// Load Input Validation
+const validateRegisterInput = require('../../validation/register');
+const validatLoginInput = require('../../validation/login');
 
 // uses route we set up in server.js, so only need the segment after /api/users / .json outputsjson
 
-// @route   GET api/users/test
-// @desc    Tests users route
-// @access  Public
 router.get('/test', (req, res) => {
   res.json({ msg: 'Users Works' });
 });
 
 router.post('/register', (req, res) => {
+  const { errors, isValid } = validateRegisterInput(req.body);
+
+  if (!isValid) {
+    return res.status(400).json(errors);
+  }
+
   // create user
   User.findOne({ email: req.body.email }).then((user) => {
     if (user) {
-      return res.status(400).json({ email: 'Email already exists' });
+      errors.email = 'Email already exists';
+      return res.status(400).json(errors);
     } else {
       const avatar = gravatar.url(req.body.email, {
         // get avatar by email or sample default
@@ -51,10 +62,11 @@ router.post('/register', (req, res) => {
   // save to db
 });
 
-// @route   POST api/users/register
-// @desc    Register user route
-// @access  Public
 router.post('/login', (req, res) => {
+  const { errors, isValid } = validatLoginInput(req.body);
+  if (!isValid) {
+    return res.status(400).json(errors);
+  }
   const email = req.body.email;
   const password = req.body.password;
 
@@ -66,14 +78,30 @@ router.post('/login', (req, res) => {
 
     // Check password
     bcrypt.compare(password, user.password).then((isMatch) => {
-      if (isMatch) {
-        res.status(200).json({ msg: 'Success' });
-      } else {
-        res.status(400).json({ password: 'Incorrect password' });
+      if (!isMatch) {
+        errors.password = 'Incorrect password';
+        res.status(400).json(errors);
       }
+      // can put anything in, will be hashed in token creation with secret
+      const payload = { id: user.id, name: user.name, avatar: user.avatar };
+      jwt.sign(payload, keys.jwtPk, { expiresIn: 3600 }, (err, token) => {
+        res.json({
+          token: `Bearer ${token}`
+        });
+      });
     });
   });
 });
+
+// Use Jwt to handle the request / add it to the routes pipeline
+router.get(
+  '/current',
+  passport.authenticate('jwt', { session: false }),
+  (req, res) => {
+    // res.json({ req.user });
+    res.send({ id: req.user.id, name: req.user.name, email: req.user.email });
+  }
+);
 
 // export router for server.js
 module.exports = router;
