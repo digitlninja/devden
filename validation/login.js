@@ -1,16 +1,14 @@
 const Validator = require('validator');
 const isEmpty = require('./is-empty');
 
-module.exports = function validateRegisterInput(data) {
+const validateRegisterInput = (data) => {
   let errors = {};
 
   // force strings for falsey values, for validator.isEmpty checking empty strings
   data.name = !isEmpty(data.name) ? data.name : '';
   data.email = !isEmpty(data.email) ? data.email : '';
   data.password = !isEmpty(data.password) ? data.password : '';
-  data.confirmPassword = !isEmpty(data.confirmPassword)
-    ? data.confirmPassword
-    : '';
+  data.confirmPassword = !isEmpty(data.confirmPassword) ? data.confirmPassword : '';
 
   // email
   if (Validator.isEmpty(data.email)) {
@@ -31,3 +29,4 @@ module.exports = function validateRegisterInput(data) {
     isValid: isEmpty(errors)
   };
 };
+module.exports = validateRegisterInput;

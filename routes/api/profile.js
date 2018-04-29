@@ -1,23 +1,31 @@
-import { SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER } from 'constants';
-
 // bring in express, we need it to wire up the routes
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const passport = require('passport');
+const bunyan = require('bunyan');
+const logger = bunyan.createLogger({ name: 'Devden' });
 
 const Profile = require('../../models/Profile');
 const User = require('../../models/User');
-const profileFactory = require('../../factories/profile-factory');
-// @Route api/profile
+const createProfile = require('../../factories/profile-factory');
+const createExperience = require('../../factories/experience-factory');
+const createEducation = require('../../factories/education-factory');
+const validateProfileInput = require('../../validation/profile');
+const validateExperienceInput = require('../../validation/experience');
+const validateEducationInput = require('../../validation/education');
+
+// @Route api/profile / Public
 
 router.get('/test', (req, res) => {
   res.json({ msg: 'Profile Works' });
 });
 
+// @GET current users profile
 router.get('/', passport.authenticate('jwt', { session: false }), (req, res) => {
   const errors = {};
   Profile.findOne({ user: req.user.id }) // related user, nav property = ObjectId
+    .populate('user', ['name', 'email']) // populate related user data
     .then((profile) => {
       // if findOne runs, but no profile found
       if (!profile) {
@@ -28,54 +36,162 @@ router.get('/', passport.authenticate('jwt', { session: false }), (req, res) => 
 
       res.json(profile);
     })
-    .catch((err) => res.status(404).json(err)); // if findOne FAILS
+    .catch((err) => res.status(500).json(err)); // if findOne FAILS
 });
 
-// @ Route api/profile / Create or Edit User
-router.post('/', passport.authenticate('jwt', { session: false }), (req, res) => {
-  const profileData = profileFactory(req.user, req.body);
+router.get('/handle/:handle', (req, res) => {
+  const errors = {};
+  Profile.findOne({ handle: req.params.handle })
+    .populate('user', ['name', 'email', 'avatar'])
+    .then((profile) => {
+      if (!profile) {
+        errors.noprofile = 'This user has no profile.';
+        res.status(404).json(errors);
+      }
+      res.json(profile);
+    })
+    .catch((err) => {
+      logger.info(err);
+      return res.status(500).json(err);
+    });
+});
 
+router.get('/user/:userid', (req, res) => {
+  const errors = {};
+  Profile.findOne({ user: req.params.userid })
+    .populate('user', ['name', 'avatar'])
+    .then((profile) => {
+      if (!profile) {
+        errors.noprofile = 'This user has no profile.';
+        return res.status(404).json(errors);
+      }
+
+      return res.status(200).json(profile);
+    })
+    .catch((err) => {
+      logger.info(err);
+      res.status(500).json({ profile: 'There is no profile for this user' });
+    });
+});
+
+router.get('/all', (req, res) => {
+  Profile.find()
+    .populate('user', ['name', 'email'])
+    .then((profiles) => {
+      if (!profiles) {
+        return res.status(404).json('No profiles found');
+      }
+      return res.status(200).json(profiles);
+    })
+    .catch((err) => {
+      logger.error(err);
+      return res.status(500);
+    });
+});
+
+router.post('/', passport.authenticate('jwt', { session: false }), (req, res) => {
+  const { errors, isValid } = validateProfileInput(req.body);
+  if (!isValid) {
+    return res.status(400).json(errors);
+  }
+
+  const model = createProfile(req.user, req.body);
   Profile.findOne({ user: req.user.id }).then((profile) => {
     // Update
     if (profile) {
-      Profile.findOneAndUpdate(
-        { user: req.user.id },
-        { $set: profileData },
-        { new: true }
-      ).then((profile) => res.json(profile));
+      Profile.findOneAndUpdate({ user: req.user.id }, { $set: model }, { new: true })
+        .then((profile) => res.json(profile))
+        .catch((err) => res.json('Error Occured'));
     } else {
       // Create
-      Profile.findOne({ handle: profileData.handle }).then((profile) => {
+      Profile.findOne({ handle: model.handle }).then((profile) => {
         if (profile) {
           errors.handle = 'Oops, handle already exists.';
           res.status(400).json(errors);
         }
         // creates and saves
-        const profile = new Profile(profileData);
+        const entity = new Profile(model);
 
-        profile.save().then((profile) => res.json(profile));
+        entity.save().then((profile) => res.json(profile));
       });
     }
   });
 });
 
+router.post(
+  '/experience',
+  passport.authenticate('jwt', { session: false }),
+  (req, res) => {
+    const { errors, isValid } = validateExperienceInput(req.body);
+    if (!isValid) {
+      return res.status(400).json(errors);
+    }
+
+    const model = createExperience(req.body);
+    console.log(model);
+    Profile.findOne({ user: req.user.id })
+      .then((profile) => {
+        if (!profile) {
+          return res.status(404);
+        }
+        // logger.info(req);
+        profile.experience.unshift(model);
+        profile.save().then((profile) => {
+          res.status(201).json(profile);
+        });
+      })
+      .catch((err) => {
+        logger.error(err);
+        return res.status(500);
+      });
+  }
+);
+
+router.post(
+  '/education',
+  passport.authenticate('jwt', { session: false }),
+  (req, res) => {
+    const { errors, isValid } = validateEducationInput(req.body);
+    if (!isValid) {
+      return res.status(400).json(errors);
+    }
+
+    console.log(req.body);
+    const model = createEducation(req.body);
+    console.log(model);
+    Profile.findOne({ user: req.user.id })
+      .then((profile) => {
+        if (!profile) {
+          return res.status(404);
+        }
+        // logger.info(req);
+        profile.education.unshift(model);
+        profile.save().then((profile) => {
+          res.status(201).json(profile);
+        });
+      })
+      .catch((err) => {
+        logger.error(err);
+        return res.status(500);
+      });
+  }
+);
+
+router.delete(
+  '/experience/:experience_id',
+  passport.authenticate('jwt', { session: false }),
+  (req, res) => {
+    Profile.findOne({ user: req.user.id })
+      .then((profile) => {
+        profile.experience.remove({ _id: req.params.experience_id });
+        profile.save();
+      })
+      .catch((err) => {
+        logger.error(err);
+        return res.status(500).json(err);
+      });
+  }
+);
+
 // export router for server.js
 module.exports = router;
-
-// profileData.user = req.user.id; // logged in user (includes avatar, name email??)
-// if (req.body.handle) profileData.handle = req.body.handle;
-// if (req.body.company) profileData.company = req.body.company;
-// if (req.body.website) profileData.website = req.body.website;
-// if (req.body.location) profileData.location = req.body.location;
-// if (req.body.bio) profileData.bio = req.body.bio;
-// if (req.body.githubusername) profileData.githubusername = req.body.githubusername;
-
-// if (typeof req.body.skills !== 'undefined') {
-//   profileData.skills = req.body.skills.split(','); // split comma sep, into array of skills
-// }
-
-// profileData.social = {};
-// if (req.body.youtube) profileData.social.youtube = req.body.youtube;
-// if (req.body.twitter) profileData.social.twitter = req.body.twitter;
-// if (req.body.facebook) profileData.social.facebook = req.body.facebook;
-// if (req.body.instagram) profileData.social.instagram = req.body.instagram;
