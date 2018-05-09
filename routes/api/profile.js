@@ -164,7 +164,6 @@ router.post(
         if (!profile) {
           return res.status(404);
         }
-        // logger.info(req);
         profile.education.unshift(model);
         profile.save().then((profile) => {
           res.status(201).json(profile);
@@ -185,6 +184,7 @@ router.delete(
       .then((profile) => {
         profile.experience.remove({ _id: req.params.experience_id });
         profile.save();
+        return res.status(200).json(profile);
       })
       .catch((err) => {
         logger.error(err);
@@ -193,5 +193,29 @@ router.delete(
   }
 );
 
+router.delete(
+  '/education/:education_id',
+  passport.authenticate('jwt', { session: false }),
+  (req, res) => {
+    Profile.findOne({ user: req.user.id })
+      .then((profile) => {
+        profile.education.remove({ _id: req.params.education_id });
+        profile.save();
+        return res.status(200).json(profile);
+      })
+      .catch((err) => {
+        logger.error(err);
+        return res.status(500).json(err);
+      });
+  }
+);
+
+router.delete('/', passport.authenticate('jwt', { session: false }), (req, res) => {
+  // get user and profile
+  Profile.findOneAndRemove({ user: req.user.id }).then(() => {
+    User.findOneAndRemove({ _id: req.user.id }).then(() => res.json({ success: true }));
+  });
+  // delete
+});
 // export router for server.js
 module.exports = router;
